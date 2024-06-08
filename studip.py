@@ -104,18 +104,30 @@ class StudIPFolder(StudIPPath):
             folder.download()
 
 class StudIPFile_ref(StudIPPath):
-    def __init__(self, studip, path, folderpath):
+    def __init__(self, studip, path, folder_path):
         super().__init__(studip, path)
-        self.filepath = folderpath + "/" + self.attributes["name"]
+        self.file_path = folder_path + "/" + self.attributes["name"]
+        self.etag_path = self.file_path + ".etag"
+        self.download_url = self.studip.root_url + self.path + "/content"
 
     def download(self):
-        response = self.session.get(self.studip.root_url + self.path + "/content")
-        if response.status_code != 200:
-            self.warning(f"Download failed: {response.text}")
-            return
-        with open(self.filepath, "wb") as file:
-            file.write(response.content)
-        print(f"Downloaded {self.filepath}")
+        if os.path.exists(self.file_path) and os.path.exists(self.etag_path):
+            etag = open(self.etag_path).read()
+            self.download_etag(etag)
+        else:
+            self.download_etag("")
+
+    def download_etag(self, etag):
+        response = self.session.get(self.download_url, headers={"If-None-Match": etag})
+        if response.status_code == 200:
+            with open(self.file_path, "wb") as f:
+                f.write(response.content)
+            with open(self.etag_path, "w") as f:
+                f.write(response.headers["ETag"])
+        elif response.status_code == 304:
+            self.studip.warning(f"File {self.file_path} is up to date")
+        else:
+            self.studip.warning(f"Failed to download {self.file_path} {response.text}")
 
 def main():
     url = "https://e-learning.tuhh.de/studip"
