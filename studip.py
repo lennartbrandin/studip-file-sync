@@ -2,10 +2,25 @@ import requests
 import base64
 import json
 import os
+import sqlite3
 from urllib.parse import urlparse
 
+class db:
+    def __init__(self, path):
+        self.path = path
+        self.conn = sqlite3.connect(path)
+        self.cursor = self.conn.cursor()
+
+    def execute(self, query):
+        self.cursor.execute(query)
+        self.conn.commit()
+
+    def close(self):
+        self.conn.close()
+
 class StudIP:
-    def __init__(self, url, user, password):
+    def __init__(self, db, url, user, password):
+        self.db = db
         parse = urlparse(url)
         self.root_url = f"{parse.scheme}://{parse.netloc}"
         self.base_route = parse.path
@@ -18,15 +33,15 @@ class StudIP:
         }
         self.session.headers.update(self.headers)
         self.studip = self # Inherited attribute
+        self.setup()
 
-        # Get self user
-        self.user = StudIPRoute(self, "/users/me")
-        self.user.set_route("/users/" + self.user.id)
+    def setup(self):
+        self.user = StudIPObjekt(self, self.get_api("/user/me"))
 
         # Collect user course list
         self.courses = []
         for course in self.user.get("/courses"):
-            c = StudIPRoute(self, "/courses/" + course["id"])
+            c = StudIPObjekt(self, "/courses/" + course["id"])
             print(f"Course: {c.attributes['title']}")
             # Get course root folder instead of course folder
             course_root_folder = c.get("/folders")[0]["relationships"]["folders"]["links"]["related"]
@@ -35,6 +50,7 @@ class StudIP:
             self.courses.append([c, f])
 
     def get_absolute(self, path):
+        """Get json data from root_url + path"""
         response = self.session.get(self.studip.root_url + path)
         if response.status_code != 200:
             print(f"{self.studip.root_url + path} {response.text}")
@@ -42,11 +58,23 @@ class StudIP:
         return response.json()["data"]
 
     def get_api(self, route):
+        """Get json data from root_url + api_route + route"""
         return self.get_absolute(self.studip.base_route + self.studip.api_route + route)
     
     def warning(self, message):
         print(f"WARNING: {message}")
 
+class StudIPObjekt(StudIP):
+    """Object that behave relative to route"""
+    def __init__(self, studip, data):
+        self.studip = studip
+        self.session = studip.session
+        for key, value in data.items():
+            setattr(self, key, value)
+
+    def get(self, route=""):
+        return self.get_api(self.type + "/" + self.id + route)
+    
 class StudIPPath(StudIP):
     def __init__(self, studip, path):
         self.studip = studip
@@ -60,13 +88,6 @@ class StudIPPath(StudIP):
 
     def get(self, route=""):
         return self.get_absolute(self.path + route)
-
-class StudIPRoute(StudIPPath):
-    def __init__(self, studip, route):
-        super().__init__(studip, studip.base_route + studip.api_route + route)
-    
-    def set_route(self, route):
-        self.set_path(self.studip.base_route + self.studip.api_route + route)
 
 # Recursive folder/file structure
 class StudIPFolder(StudIPPath):
@@ -132,6 +153,7 @@ class StudIPFile_ref(StudIPPath):
 def main():
     url = "https://e-learning.tuhh.de/studip"
     credentials = json.load(open("credentials.json"))
-    studip = StudIP(url, credentials["login"], credentials["password"])
+    studip_db = db("studip.db")
+    studip = StudIP(studip_db, url, credentials["login"], credentials["password"])
 
 main()
