@@ -10,7 +10,28 @@ class db:
         self.path = path
         self.conn = sqlite3.connect(path)
         self.cursor = self.conn.cursor()
+        self.execute("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, path TEXT, etag TEXT)")
 
+    def insert(self, path, etag):
+        self.execute(f"INSERT INTO files (path, etag) VALUES ('{path}', '{etag}')")
+
+    def update(self, path, etag):
+        self.execute(f"UPDATE files SET etag = '{etag}' WHERE path = '{path}'")
+
+    def upsert(self, path, etag):
+        if self.select(path):
+            self.update(path, etag)
+        else:
+            self.insert(path, etag)
+
+    def select(self, path):
+        self.cursor.execute(f"SELECT etag FROM files WHERE path = '{path}'")
+        data = self.cursor.fetchone()
+        if data:
+            return data[0]
+        else:
+            return None
+    
     def execute(self, query):
         self.cursor.execute(query)
         self.conn.commit()
@@ -19,7 +40,7 @@ class db:
         self.conn.close()
 
 class StudIP:
-    def __init__(self, db, url, user, password):
+    def __init__(self, db, url, user, password, folderpath):
         self.db = db
         parse = urlparse(url)
         self.root_url = f"{parse.scheme}://{parse.netloc}"
@@ -27,6 +48,7 @@ class StudIP:
         self.api_route = "/jsonapi.php/v1"
         self.username = user
         self.password = password
+        self.folderpath = folderpath
         self.session = requests.Session()
         self.headers = {
                 "Authorization": "Basic " + base64.b64encode(f"{self.username}:{self.password}".encode()).decode(),
@@ -44,7 +66,7 @@ class StudIP:
             c = StudIPRoute(self, course)
             print(f"Course: {c.attributes['title']}")
             # Get course root folder instead of course folder
-            f = StudIPFolder(self, c.get_sub("/folders")[0], "./courses")
+            f = StudIPFolder(self, c.get_sub("/folders")[0], self.folderpath)
             f.download()
             self.courses.append([c, f])
 
@@ -54,7 +76,7 @@ class StudIP:
         headers.update(additional_headers)
         response = self.session.get(self.studip.root_url + path, headers=headers)
         if response.status_code != 200:
-            print(f"{self.studip.root_url + path} {response.text}")
+            self.warning(f"Request to {self.studip.root_url + path} failed with status code {response.status_code}")
         return response
     
     def get_raw_api(self, route, headers=""):
@@ -113,30 +135,22 @@ class StudIPFile_ref(StudIPRoute):
     def __init__(self, studip, data, folder_path):
         super().__init__(studip, data)
         self.file_path = folder_path + "/" + self.attributes["name"]
-        self.etag_path = self.file_path + ".etag"
+        self.etag = self.studip.db.select(self.file_path)
 
     def download(self):
-        if os.path.exists(self.file_path) and os.path.exists(self.etag_path):
-            etag = open(self.etag_path).read()
-            self.download_etag(etag)
-        else:
-            self.download_etag("")
-
-    def download_etag(self, etag):
-        response = self.get_raw_sub("/content", headers={"If-None-Match": etag})
+        response = self.get_raw_sub("/content", headers={"If-None-Match": self.etag})
         if response.status_code == 200:
-            with open(self.file_path, "wb") as f:
-                f.write(response.content)
-            with open(self.etag_path, "w") as f:
-                f.write(response.headers["ETag"])
+            with open(self.file_path, "wb") as file:
+                file.write(response.content)
+            self.studip.db.upsert(self.file_path, response.headers["ETag"])
         elif response.status_code == 304:
-            self.studip.warning(f"File {self.file_path} is up to date")
+            pass    
         else:
-            self.studip.warning(f"Failed to download {self.file_path} {response.text}")
+            self.warning(f"File {self.file_path} not downloaded {response.text}")
 
 def main():
     url = "https://e-learning.tuhh.de/studip"
-    credentials = json.load(open("credentials.json"))
+    config = json.load(open("config.json"))
     studip_db = db("studip.db")
-    studip = StudIP(studip_db, url, credentials["login"], credentials["password"])
+    studip = StudIP(studip_db, url, config["login"], config["password"])
 main()
