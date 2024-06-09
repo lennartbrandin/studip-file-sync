@@ -40,7 +40,7 @@ class db:
         self.conn.close()
 
 class StudIP:
-    def __init__(self, db, url, user, password, folderpath):
+    def __init__(self, db, url, user, password, folder_path):
         self.db = db
         parse = urlparse(url)
         self.root_url = f"{parse.scheme}://{parse.netloc}"
@@ -48,7 +48,7 @@ class StudIP:
         self.api_route = "/jsonapi.php/v1"
         self.username = user
         self.password = password
-        self.folderpath = folderpath
+        self.folder_path = folder_path
         self.session = requests.Session()
         self.headers = {
                 "Authorization": "Basic " + base64.b64encode(f"{self.username}:{self.password}".encode()).decode(),
@@ -66,7 +66,7 @@ class StudIP:
             c = StudIPRoute(self, course)
             print(f"Course: {c.attributes['title']}")
             # Get course root folder instead of course folder
-            f = StudIPFolder(self, c.get_sub("/folders")[0], self.folderpath)
+            f = StudIPFolder(self, c.get_sub("/folders")[0], self.folder_path)
             f.download()
             self.courses.append([c, f])
 
@@ -125,7 +125,7 @@ class StudIPFolder(StudIPRoute):
 
     def download(self):
         if not os.path.exists(self.folder_path):
-            os.makedirs(self.folderpath)
+            os.makedirs(self.folder_path)
         for file_ref in self.files_refs:
             file_ref.download()
         for folder in self.folders:
@@ -152,5 +152,5 @@ def main():
     url = "https://e-learning.tuhh.de/studip"
     config = json.load(open("config.json"))
     studip_db = db("studip.db")
-    studip = StudIP(studip_db, url, config["login"], config["password"])
+    studip = StudIP(studip_db, url, config["login"], config["password"], config["file_destination"])
 main()
