@@ -5,6 +5,11 @@ import os
 import sqlite3
 from urllib.parse import urlparse
 
+
+def replace_invalid_chars(string):
+    for char in '<>:"/\|?*':
+        string = string.replace(char, "_")
+    return string
 class db:
     def __init__(self, path):
         self.path = path
@@ -75,7 +80,7 @@ class StudIP:
         headers = self.session.headers.copy()
         headers.update(additional_headers)
         response = self.session.get(self.studip.root_url + path, headers=headers)
-        if response.status_code != 200:
+        if response.status_code != 200 and response.status_code != 304:
             self.warning(f"Request to {self.studip.root_url + path} failed with status code {response.status_code}")
         return response
     
@@ -103,7 +108,12 @@ class StudIPRoute(StudIP):
 class StudIPFolder(StudIPRoute):
     def __init__(self, studip, data, folder_path):
         super().__init__(studip, data)
-        self.folder_path = folder_path + "/" + self.attributes["name"]
+        folder_name = replace_invalid_chars(self.attributes["name"])
+        # Convert course prefix to folder name
+        if self.attributes["folder-type"] == "RootFolder":
+            split = folder_name.split(" ")
+            folder_name = split[0][:-1] + "/" + " ".join(split[1:]) # [:-1] Remove trailing colon
+        self.folder_path = folder_path + "/" + folder_name
         self.files_refs = []
         self.folders = []
         self.get_file_refs()
@@ -134,8 +144,11 @@ class StudIPFolder(StudIPRoute):
 class StudIPFile_ref(StudIPRoute):
     def __init__(self, studip, data, folder_path):
         super().__init__(studip, data)
-        self.file_path = folder_path + "/" + self.attributes["name"]
-        self.etag = self.studip.db.select(self.file_path)
+        self.file_path = folder_path + "/" + replace_invalid_chars(self.attributes["name"])
+        if os.path.exists(self.file_path):
+            self.etag = self.studip.db.select(self.file_path)
+        else:
+            self.etag = None
 
     def download(self):
         response = self.get_raw_sub("/content", headers={"If-None-Match": self.etag})
