@@ -2,6 +2,7 @@ import requests
 import base64
 import json
 import os
+import unicodedata
 import sqlite3
 from urllib.parse import urlparse
 
@@ -9,7 +10,8 @@ from urllib.parse import urlparse
 def replace_invalid_chars(string):
     for char in '<>:"/\\|?*':
         string = string.replace(char, "_")
-    return string
+    return unicodedata.normalize('NFKC', string)
+
 class db:
     def __init__(self, path):
         self.path = path
