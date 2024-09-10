@@ -73,7 +73,8 @@ class StudIP:
             c = StudIPRoute(self, course)
             print(f"Course: {c.attributes['title']}")
             # Get course root folder instead of course folder
-            f = StudIPFolder(self, c.get_sub("/folders")[0], self.folder_path)
+            semester = StudIPRoute(self, self.get_raw_absolute(c.relationships["start-semester"]["links"]["related"], {}).json()["data"])
+            f = StudIPFolder(self, c.get_sub("/folders")[0], self.folder_path + "/" + replace_invalid_chars(semester.attributes["title"]))
             f.download()
             self.courses.append([c, f])
 
