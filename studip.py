@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 
 def replace_invalid_chars(string):
-    for char in '<>:"/\\|?*':
+    for char in '<>:"/\\|?*\'':
         string = string.replace(char, "_")
     return unicodedata.normalize('NFKC', string)
 
