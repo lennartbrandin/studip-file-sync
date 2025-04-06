@@ -103,7 +103,7 @@ class StudIPRoute(StudIP):
             setattr(self, key, value)
 
     def get_raw_sub(self, route="", headers=""):
-        return self.get_raw_api("/"+ self.type +"/"+ self.id + route, headers)
+        return self.get_raw_api("/"+ self.type +"/"+ self.id + route + "?page[offset]=0&page[limit]=10000", headers)
 
     def get_sub(self, route="", headers=""):
         return self.get_raw_sub(route, headers).json()["data"]
